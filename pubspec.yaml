@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.13.3
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -13,17 +13,20 @@ dependencies:
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
   flutter_launcher_icons: ^0.13.1
+  flutter_lints: ^3.0.0
 
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/app_icon.png"
+  image_path: "assets/icon/app_icon.png"
   web:
     generate: true
-    image_path: "assets/app_icon.png"
-    background_color: "#hexcode"
-    theme_color: "#hexcode"
+    image_path: "assets/icon/app_icon.png"
+    background_color: "#ffffff"
+    theme_color: "#0175c2"
 
 flutter:
   uses-material-design: true
