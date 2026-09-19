@@ -216,7 +216,7 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return 'Please enter the flock size';
+return 'Please enter the flock size';
                           }
                           final flock = int.tryParse(value);
                           if (flock == null || flock <= 0) {
