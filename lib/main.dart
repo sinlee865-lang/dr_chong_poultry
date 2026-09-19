@@ -23,7 +23,7 @@ class PoultryMedApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Dr.Chong Poultry Medicine Calculator',
+      title: 'Dr.Chong 014-6220912',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
