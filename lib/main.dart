@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
   runApp(const PoultryMedApp());
@@ -117,6 +118,14 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
     super.dispose();
   }
 
+  // WhatsApp helper function
+  Future<void> _openWhatsApp() async {
+    final Uri whatsappUrl = Uri.parse("https://wa.me/60146220912");
+    if (!await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch WhatsApp');
+    }
+  }
+
   void _calculate() {
     if (_formKey.currentState!.validate()) {
       FocusScope.of(context).unfocus();
@@ -167,6 +176,13 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
         title: const Text('Dr.Chong 014-6220912'),
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: theme.colorScheme.onPrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.chat),
+            tooltip: 'Chat on WhatsApp',
+            onPressed: _openWhatsApp,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -216,7 +232,7 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-return 'Please enter the flock size';
+                            return 'Please enter the flock size';
                           }
                           final flock = int.tryParse(value);
                           if (flock == null || flock <= 0) {
