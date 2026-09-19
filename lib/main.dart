@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'firebase_options.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const PoultryMedApp());
 }
 
 class MedicineConfig {
   final String name;
-  final double factor; // Grams required per gram of average body weight (for 10,000 birds)
+  final double factor;
   final Color themeColor;
 
   const MedicineConfig({
@@ -28,9 +36,235 @@ class PoultryMedApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF005F56)),
       ),
-      home: const DosageCalculatorScreen(),
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (snapshot.hasData) {
+            return const DosageCalculatorScreen();
+          }
+          return const PhoneLoginScreen();
+        },
+      ),
+    );
+  }
+}
+
+class PhoneLoginScreen extends StatefulWidget {
+  const PhoneLoginScreen({super.key});
+
+  @override
+  State<PhoneLoginScreen> createState() => _PhoneLoginScreenState();
+}
+
+class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _codeController = TextEditingController();
+
+  String? _verificationId;
+  ConfirmationResult? _webConfirmationResult;
+  bool _isLoading = false;
+  bool _codeSent = false;
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _codeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendCode() async {
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid phone number.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      if (Theme.of(context).platform == TargetPlatform.android ||
+          Theme.of(context).platform == TargetPlatform.iOS) {
+        await FirebaseAuth.instance.verifyPhoneNumber(
+          phoneNumber: phone,
+          verificationCompleted: (PhoneAuthCredential credential) async {
+            await FirebaseAuth.instance.signInWithCredential(credential);
+          },
+          verificationFailed: (FirebaseAuthException e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(e.message ?? 'Verification failed.')),
+            );
+          },
+          codeSent: (String verificationId, int? resendToken) {
+            if (!mounted) return;
+            setState(() {
+              _verificationId = verificationId;
+              _codeSent = true;
+            });
+          },
+          codeAutoRetrievalTimeout: (String verificationId) {
+            _verificationId = verificationId;
+          },
+        );
+      } else {
+        final confirmationResult =
+            await FirebaseAuth.instance.signInWithPhoneNumber(phone);
+        if (!mounted) return;
+        setState(() {
+          _webConfirmationResult = confirmationResult;
+          _codeSent = true;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _verifyCode() async {
+    final code = _codeController.text.trim();
+    if (code.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter the verification code.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      if (_webConfirmationResult != null) {
+        await _webConfirmationResult!.confirm(code);
+      } else if (_verificationId != null) {
+        final credential = PhoneAuthProvider.credential(
+          verificationId: _verificationId!,
+          smsCode: code,
+        );
+        await FirebaseAuth.instance.signInWithCredential(credential);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Invalid code: ${e.toString()}')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Dr.Chong Sign In'),
+        backgroundColor: const Color(0xFF005F56),
+        foregroundColor: Colors.white,
+        centerTitle: true,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Card(
+            elevation: 4,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(Icons.lock_person, size: 64, color: Color(0xFF005F56)),
+                  const SizedBox(height: 16),
+                  Text(
+                    _codeSent ? 'Enter SMS Code' : 'Phone Authentication',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 24),
+                  if (!_codeSent) ...[
+                    TextField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone Number (e.g. +60146220912)',
+                        prefixIcon: Icon(Icons.phone),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : _sendCode,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF005F56),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Send Verification Code'),
+                    ),
+                  ] else ...[
+                    TextField(
+                      controller: _codeController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '6-Digit SMS Code',
+                        prefixIcon: Icon(Icons.pin),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : _verifyCode,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF005F56),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Verify & Sign In'),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() => _codeSent = false),
+                      child: const Text('Change Phone Number'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -45,9 +279,9 @@ class DosageCalculatorScreen extends StatefulWidget {
 class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _ageController = TextEditingController();
-  final TextEditingController _flockController = TextEditingController(text: '10000');
+  final TextEditingController _flockController =
+      TextEditingController(text: '10000');
 
-  // Complete list of 16 medications
   final List<MedicineConfig> _medications = const [
     MedicineConfig(name: 'Amoxicillin 50', factor: 0.27, themeColor: Colors.teal),
     MedicineConfig(name: 'Amprol 20', factor: 1.00, themeColor: Colors.pink),
@@ -63,11 +297,10 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
     MedicineConfig(name: 'Sulfa 480', factor: 0.68, themeColor: Colors.deepOrange),
     MedicineConfig(name: 'Tilmiseen 25', factor: 0.80, themeColor: Colors.orange),
     MedicineConfig(name: 'Toltrazuril 2.5', factor: 2.80, themeColor: Colors.amber),
-    MedicineConfig(name: 'Tylosin Pure', factor: 1.00, themeColor: Colors.blueGrey), 
+    MedicineConfig(name: 'Tylosin Pure', factor: 1.00, themeColor: Colors.blueGrey),
     MedicineConfig(name: 'Tylvalosin 62.5', factor: 0.40, themeColor: Colors.lightGreen),
   ];
 
-  // Body Weight in grams by age (Days 0 to 45)
   final Map<int, double> _bodyWeightData = const {
     0: 44.0, 1: 62.0, 2: 81.0, 3: 102.0, 4: 125.0, 5: 151.0, 6: 181.0, 7: 213.0,
     8: 249.0, 9: 288.0, 10: 330.0, 11: 376.0, 12: 425.0, 13: 477.0, 14: 533.0,
@@ -78,7 +311,6 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
     40: 2798.0, 41: 2898.0, 42: 2998.0, 43: 3097.0, 44: 3197.0, 45: 3295.0,
   };
 
-  // Updated 8-Hour Water Intake in Liters for 10,000 birds (Days 0 to 45)
   final Map<int, double> _waterIntakeData = const {
     0: 0.0, 1: 68.0, 2: 91.0, 3: 113.0, 4: 136.0, 5: 153.0, 6: 176.0, 7: 198.0,
     8: 221.0, 9: 249.0, 10: 272.0, 11: 295.0, 12: 323.0, 13: 351.0, 14: 380.0,
@@ -89,7 +321,6 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
     43: 1447.0, 44: 1467.0, 45: 1487.0,
   };
 
-  // Daily Intake in kg for 10,000 birds (Days 0 to 45)
   final Map<int, double> _dailyIntakeData = const {
     0: 0.0, 1: 120.0, 2: 160.0, 3: 200.0, 4: 240.0, 5: 270.0, 6: 310.0, 7: 350.0,
     8: 390.0, 9: 440.0, 10: 480.0, 11: 520.0, 12: 570.0, 13: 620.0, 14: 670.0,
@@ -100,7 +331,6 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
     43: 2110.0, 44: 2130.0, 45: 2160.0,
   };
 
-  // Currently selected medication (null = All Medications)
   MedicineConfig? _selectedMedication;
 
   int? _calculatedAge;
@@ -118,7 +348,6 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
     super.dispose();
   }
 
-  // WhatsApp helper function
   Future<void> _openWhatsApp() async {
     final Uri whatsappUrl = Uri.parse("https://wa.me/60146220912");
     if (!await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication)) {
@@ -137,11 +366,9 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
       final double totalFlockKg = (avgBw * flock) / 1000.0;
       final double flockMultiplier = flock / 10000.0;
 
-      // Calculate scaled 8-hour water intake and total daily intake
       final double scaledWaterL = _waterIntakeData[age]! * flockMultiplier;
       final double scaledDailyIntakeKg = _dailyIntakeData[age]! * flockMultiplier;
 
-      // Filter list: calculate for single selected medication, or all if null
       final targetList = _selectedMedication != null
           ? [_selectedMedication!]
           : _medications;
@@ -174,14 +401,17 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dr.Chong 014-6220912'),
-        backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
+        backgroundColor: const Color(0xFF005F56),
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.chat),
-            tooltip: 'Chat on WhatsApp',
-            onPressed: _openWhatsApp,
+            icon: const Icon(Icons.logout, color: Colors.white),
+            tooltip: 'Sign Out',
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+            },
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: SingleChildScrollView(
@@ -191,10 +421,10 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Inputs Card
               Card(
                 elevation: 2,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
@@ -242,8 +472,6 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
                         },
                       ),
                       const SizedBox(height: 16),
-
-                      // Searchable Dropdown Menu
                       LayoutBuilder(
                         builder: (context, constraints) {
                           return DropdownMenu<MedicineConfig?>(
@@ -277,29 +505,45 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
                         },
                       ),
                       const SizedBox(height: 20),
-
                       ElevatedButton(
                         onPressed: _calculate,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: theme.colorScheme.primary,
-                          foregroundColor: theme.colorScheme.onPrimary,
+                          backgroundColor: const Color(0xFF005F56),
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
                         ),
-                        child: const Text('Calculate Dosage', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        child: const Text('Calculate Dosage',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
                 ),
               ),
-
-              // Results Card
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: _openWhatsApp,
+                icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 20),
+                label: const Text('Click Here to talk to Dr.Chong',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
               if (_medResults.isNotEmpty) ...[
                 const SizedBox(height: 20),
                 Card(
-                  color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  color: theme.colorScheme.primaryContainer
+                      .withValues(alpha: 0.3),
                   elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
@@ -307,23 +551,34 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
                       children: [
                         Text(
                           'Results for $_calculatedFlock birds (Day $_calculatedAge)',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.onSurface),
                         ),
                         const Divider(),
-                        _buildResultRow('Average Weight / Bird', '$_avgWeightG g'),
-                        _buildResultRow('Total Flock Weight', '${_totalWeightKg!.toStringAsFixed(1)} kg'),
-                        _buildResultRow('8-Hour Water Intake', '${_waterIntakeL!.toStringAsFixed(1)} L'),
-                        _buildResultRow('Total Daily Intake', '${_dailyIntakeKg!.toStringAsFixed(1)} kg'),
+                        _buildResultRow(
+                            'Average Weight / Bird', '$_avgWeightG g'),
+                        _buildResultRow('Total Flock Weight',
+                            '${_totalWeightKg!.toStringAsFixed(1)} kg'),
+                        _buildResultRow('8-Hour Water Intake',
+                            '${_waterIntakeL!.toStringAsFixed(1)} L'),
+                        _buildResultRow('Total Daily Intake',
+                            '${_dailyIntakeKg!.toStringAsFixed(1)} kg'),
                         const SizedBox(height: 16),
                         Text(
                           'Required Medication Amounts:',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary),
                         ),
                         const SizedBox(height: 10),
                         ..._medResults.map((med) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
-                          child: _buildMedBox(med['name'], med['dose'], med['color']),
-                        )),
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: _buildMedBox(
+                                  med['name'], med['dose'], med['color']),
+                            )),
                       ],
                     ),
                   ),
@@ -342,8 +597,11 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 14, color: Colors.black)),
-          Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          Text(label,
+              style: const TextStyle(fontSize: 14, color: Colors.black)),
+          Text(value,
+              style:
+                  const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -360,8 +618,12 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
-          Text(dose, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+          Text(name,
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+          Text(dose,
+              style: TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.bold, color: color)),
         ],
       ),
     );

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "981927544561",
+    "project_id": "drchongpoultry",
+    "storage_bucket": "drchongpoultry.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:981927544561:android:f6f5382743982da4790b50",
+        "android_client_info": {
+          "package_name": "com.example.medicine_app1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBlJ-XHo82_idfxUz7FrYdZi2VewIUMrIE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
