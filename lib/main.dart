@@ -164,7 +164,7 @@ class _DosageCalculatorScreenState extends State<DosageCalculatorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dr.Chong Poultry Medicine Dosage'),
+        title: const Text('Dr.Chong 014-6220912'),
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: theme.colorScheme.onPrimary,
       ),
